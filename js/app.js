@@ -476,10 +476,14 @@ function viewBilancioEventi() {
     <div class="row"><span class="t grow">${esc(ev.nome)}</span><span class="chip ${ev.chiuso ? 'bad' : 'ok'}">${ev.chiuso ? 'chiuso' : 'aperto'}</span></div>
     <div class="small muted">${fmtD(ev.inizio)} · ${diff >= 0 ? 'utile' : 'perdita'} ${eur(Math.abs(diff))}</div></div>`; }).join('') || '<div class="empty">Nessun evento.</div>'}</div>`;
 }
-function entryCol(title, list, add, del) {
-  return `<div class="panel"><h3>${title}</h3><table class="t">${list.map(x => `<tr><td>${esc(x.nota)}${x.cat ? ` <span class="chip">${esc(x.cat)}</span>` : ''}<div class="small muted">${fmtD(x.data)}</div></td><td class="n">${eur(x.euro)}</td><td class="n edit"><button class="btn sm sec" data-a="${del.a}" ${del.attrs} data-e="${x.id}">✕</button></td></tr>`).join('') || '<tr><td class="muted small">Nessuna voce</td></tr>'}
+function entryRow(x, attrs) {
+  return `<tr><td>${esc(x.nota)}${x.cat ? ` <span class="chip">${esc(x.cat)}</span>` : ''}<div class="small muted">${fmtD(x.data)}${x.imp ? ' · da Excel' : ''}</div></td><td class="n">${eur(x.euro)}</td>
+    <td class="n edit" style="white-space:nowrap"><button class="btn sm sec" data-a="entEdit" ${attrs} data-e="${x.id}" aria-label="Modifica">✎</button> <button class="btn sm sec" data-a="entDel" ${attrs} data-e="${x.id}" aria-label="Elimina">✕</button></td></tr>`;
+}
+function entryCol(title, list, attrs) {
+  return `<div class="panel"><h3>${title}</h3><table class="t">${[...list].sort((a, b) => (a.data || '').localeCompare(b.data || '')).map(x => entryRow(x, attrs)).join('') || '<tr><td class="muted small">Nessuna voce</td></tr>'}
    <tr class="tot"><td>TOTALE</td><td class="n">${eur(sum(list))}</td><td></td></tr></table>
-   <button class="btn sm edit" style="margin-top:8px" data-a="${add.a}" ${add.attrs}>+ AGGIUNGI</button></div>`;
+   <button class="btn sm edit" style="margin-top:8px" data-a="entAdd" ${attrs}>+ AGGIUNGI</button></div>`;
 }
 function resultBox(entrate, spese) {
   const diff = entrate - spese;
@@ -488,9 +492,10 @@ function resultBox(entrate, spese) {
 function viewBilancioEvento(id) {
   const ev = evById(id); if (!ev) return '<div class="empty">Evento non trovato</div>';
   const b = ev.bilancio, E = canEdit();
+  const at = t => `data-src="ev" data-id="${ev.id}" data-t="${t}"`;
   return `<h2 class="pg">${esc(ev.nome)} <span class="chip ${ev.chiuso ? 'bad' : 'ok'}">${ev.chiuso ? 'chiuso' : 'aperto'}</span></h2>
-  <div class="cols">${entryCol('SPESE', b.spese, { a: 'entAdd', attrs: `data-id="${ev.id}" data-t="spese"` }, { a: 'entDel', attrs: `data-id="${ev.id}" data-t="spese"` })}
-   ${entryCol('ENTRATE', b.entrate, { a: 'entAdd', attrs: `data-id="${ev.id}" data-t="entrate"` }, { a: 'entDel', attrs: `data-id="${ev.id}" data-t="entrate"` })}</div>
+  <div class="row edit" style="margin-bottom:10px"><button class="btn sec grow" data-a="xlsImport" data-id="${ev.id}">⬆ CARICA DA EXCEL</button></div>
+  <div class="cols">${entryCol('SPESE', b.spese, at('spese'))}${entryCol('ENTRATE', b.entrate, at('entrate'))}</div>
   ${resultBox(sum(b.entrate), sum(b.spese))}
   <div class="panel" style="margin-top:12px"><h3>Note</h3><div class="cols">
    <div><label class="f">Porzioni preparate</label><input class="i" type="number" value="${esc(b.porzioniPreparate)}" ${E ? '' : 'disabled'} data-ch="bilNote" data-id="${ev.id}" data-f="porzioniPreparate"></div>
@@ -498,18 +503,144 @@ function viewBilancioEvento(id) {
    <label class="f">Altre note</label><textarea class="i" ${E ? '' : 'disabled'} data-ch="bilNote" data-id="${ev.id}" data-f="note">${esc(b.note || '')}</textarea></div>
   <button class="btn big edit ${ev.chiuso ? 'sec' : 'bad'}" data-a="evChiudi" data-id="${ev.id}">${ev.chiuso ? 'RIAPRI EVENTO' : 'CHIUDI EVENTO'}</button>`;
 }
-function entryModal(tipo, onSave) {
-  const sp = tipo === 'spese';
-  modal(sp ? 'Nuova spesa' : 'Nuova entrata', `${fld(sp ? 'Nota libera pagamento' : 'Nota libera', 'nota', '', 'text', true)}
-   <div class="cols"><div>${fld('Euro', 'euro', '', 'text', true, 'inputmode="decimal"')}</div><div>${fld(sp ? 'Data pagamento' : 'Data incasso', 'data', today(), 'date', true)}</div></div>
-   ${sel('Categoria (facoltativa)', 'cat', [['', '—'], ...(sp ? CAT_SPESE : CAT_ENTRATE)], '')}`, async f => {
+/* finestra per inserire o correggere una voce; onSave(voce, tipo) */
+function entryModal(tipo, onSave, x) {
+  const sp = tipo === 'spese', editing = !!x; x = x || {};
+  const form = modal(editing ? 'Modifica voce' : sp ? 'Nuova spesa' : 'Nuova entrata', `
+   ${editing ? sel('Tipo', 'tipo', [['spese', 'Spesa'], ['entrate', 'Entrata']], tipo, true) : ''}
+   ${fld(sp ? 'Nota libera pagamento' : 'Nota libera', 'nota', x.nota || '', 'text', true)}
+   <div class="cols"><div>${fld('Euro', 'euro', x.euro != null ? String(x.euro).replace('.', ',') : '', 'text', true, 'inputmode="decimal"')}</div><div>${fld(sp ? 'Data pagamento' : 'Data incasso', 'data', x.data || today(), 'date', true)}</div></div>
+   <div id="cat-box">${sel('Categoria (facoltativa)', 'cat', [['', '—'], ...(sp ? CAT_SPESE : CAT_ENTRATE)], x.cat || '')}</div>`, async f => {
     if (!num(f.euro)) { toast('Importo non valido'); return false; }
-    await onSave({ id: uid(), nota: f.nota.trim(), euro: num(f.euro), data: f.data, cat: f.cat });
+    await onSave({ ...x, id: x.id || uid(), nota: f.nota.trim(), euro: Math.abs(num(f.euro)), data: f.data, cat: f.cat }, f.tipo || tipo);
     render();
   });
+  const t = $('[name=tipo]', form);
+  if (t) t.addEventListener('change', () => { $('#cat-box', form).innerHTML = sel('Categoria (facoltativa)', 'cat', [['', '—'], ...(t.value === 'spese' ? CAT_SPESE : CAT_ENTRATE)], ''); });
 }
-A.entAdd = d => { const ev = evById(d.id); entryModal(d.t, async e => { ev.bilancio[d.t].push(e); await save('events'); }); };
-A.entDel = d => confirmBox('Eliminare la voce?', async () => { const ev = evById(d.id); ev.bilancio[d.t] = ev.bilancio[d.t].filter(x => x.id !== d.e); await save('events'); render(); }, 'Elimina');
+/* contenitore delle voci: bilancio di un evento o voci extra di un anno */
+function entryStore(d) {
+  if (d.src === 'year') { DB.bilancio.years[d.y] = DB.bilancio.years[d.y] || { spese: [], entrate: [] }; return { box: DB.bilancio.years[d.y], key: 'bilancio' }; }
+  return { box: evById(d.id).bilancio, key: 'events' };
+}
+A.entAdd = d => { const { box, key } = entryStore(d); entryModal(d.t, async e => { box[d.t].push(e); await save(key); }); };
+A.entEdit = d => {
+  const { box, key } = entryStore(d); const x = box[d.t].find(i => i.id === d.e); if (!x) return;
+  entryModal(d.t, async (e, tipo) => {
+    box[d.t] = box[d.t].filter(i => i.id !== x.id);
+    box[tipo].push(e); await save(key);
+  }, x);
+};
+A.entDel = d => confirmBox('Eliminare la voce?', async () => { const { box, key } = entryStore(d); box[d.t] = box[d.t].filter(x => x.id !== d.e); await save(key); render(); }, 'Elimina');
+
+/* --- importazione da Excel --- */
+const XL_GUESS = {
+  nota: /descr|nota|causal|voce|dettagl|articol|fornitor|oggetto|motivo/i,
+  euro: /importo|euro|€|totale|ammontare|valore|prezzo|cifra|costo/i,
+  data: /data|giorno|date/i,
+  cat: /categ|tipolog/i,
+  tipo: /^tipo$|movimento|entrata.*uscita|uscita.*entrata|segno/i,
+  spese: /spes|uscit|dare|pagament|cost/i,
+  entrate: /entrat|incass|avere|ricav/i,
+};
+function xlDetectHeader(rows) {
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const r = rows[i] || [];
+    const txt = r.filter(v => typeof v === 'string' && v.trim() && isNaN(cellNumber(v)));
+    if (txt.length >= 2) return i;
+  }
+  return 0;
+}
+function xlGuess(headers) {
+  const find = (re, not = []) => headers.findIndex((h, i) => re.test(h) && !not.includes(i));
+  const g = {};
+  g.data = find(XL_GUESS.data); g.cat = find(XL_GUESS.cat, [g.data]); g.tipo = find(XL_GUESS.tipo, [g.data, g.cat]);
+  g.colS = find(XL_GUESS.spese, [g.data, g.cat, g.tipo]); g.colE = find(XL_GUESS.entrate, [g.data, g.cat, g.tipo, g.colS]);
+  g.euro = find(XL_GUESS.euro, [g.data, g.cat, g.tipo, g.colS, g.colE]);
+  g.nota = find(XL_GUESS.nota, [g.data, g.euro, g.cat, g.tipo, g.colS, g.colE]);
+  if (g.nota < 0) g.nota = headers.findIndex((h, i) => ![g.data, g.euro, g.cat, g.tipo, g.colS, g.colE].includes(i));
+  g.modo = g.colS >= 0 && g.colE >= 0 ? 'due' : g.tipo >= 0 ? 'tipo' : 'segno';
+  return g;
+}
+function matchCat(v, list) { const s = norm(v); if (!s) return ''; return list.find(c => norm(c) === s || norm(c).startsWith(s) || s.startsWith(norm(c))) || ''; }
+function xlParse(rows, hdr, m, ev) {
+  const out = [], skipped = [];
+  for (let i = hdr + 1; i < rows.length; i++) {
+    const r = rows[i] || []; if (!r.some(v => String(v).trim())) continue;
+    const nota = String(m.nota >= 0 ? r[m.nota] ?? '' : '').trim();
+    if (/^(totale|totali|saldo|subtotale)\b/i.test(nota)) { skipped.push(i + 1); continue; }
+    const items = [];
+    if (m.modo === 'due') {
+      const s = cellNumber(r[m.colS]), e = cellNumber(r[m.colE]);
+      if (s) items.push(['spese', Math.abs(s)]); if (e) items.push(['entrate', Math.abs(e)]);
+    } else {
+      const n = cellNumber(r[m.euro]); if (!n) { skipped.push(i + 1); continue; }
+      let t;
+      if (m.modo === 'tipo') { const tv = norm(r[m.tipo]); t = /^(E|ENTR|INC|AVERE|RIC|\+)/.test(tv) ? 'entrate' : /^(S|USC|SPES|DARE|PAG|-)/.test(tv) ? 'spese' : (n < 0 ? 'spese' : null); }
+      else if (m.modo === 'segno') t = n < 0 ? 'spese' : 'entrate';
+      else t = m.modo; // 'spese' | 'entrate': tutte dello stesso tipo
+      if (!t) { skipped.push(i + 1); continue; }
+      items.push([t, Math.abs(n)]);
+    }
+    if (!items.length) { skipped.push(i + 1); continue; }
+    const data = (m.data >= 0 && cellDate(r[m.data])) || ev.inizio;
+    for (const [t, euro] of items) {
+      const cat = m.cat >= 0 ? matchCat(r[m.cat], t === 'spese' ? CAT_SPESE : CAT_ENTRATE) : '';
+      out.push({ t, nota: nota || (m.cat >= 0 && String(r[m.cat] || '').trim()) || 'Voce importata', euro: Math.round(euro * 100) / 100, data, cat });
+    }
+  }
+  return { out, skipped };
+}
+A.xlsImport = async d => {
+  const ev = evById(d.id);
+  const file = await pickFile('.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv');
+  if (!file) return;
+  let sheets;
+  busy(true, 'Leggo il file…');
+  try { sheets = await readSpreadsheet(file); } catch (e) { busy(false); return toast(e.message); }
+  busy(false);
+  const st = { sheet: 0 };
+  const setup = () => {
+    const rows = sheets[st.sheet].rows; st.hdr = xlDetectHeader(rows);
+    st.headers = (rows[st.hdr] || []).map((h, i) => String(h || '').trim() || `Colonna ${String.fromCharCode(65 + i)}`);
+    st.m = xlGuess(st.headers);
+  };
+  setup();
+  const colSel = (label, name, val, opt) => sel(label, name, [...(opt ? [['-1', '— nessuna —']] : []), ...st.headers.map((h, i) => [String(i), h])], String(val));
+  const body = () => {
+    const { out, skipped } = xlParse(sheets[st.sheet].rows, st.hdr, st.m, ev);
+    const S = out.filter(x => x.t === 'spese'), E = out.filter(x => x.t === 'entrate');
+    const tot = l => l.reduce((a, x) => a + x.euro, 0);
+    return `${sheets.length > 1 ? sel('Foglio', 'sheet', sheets.map((s, i) => [String(i), s.name]), String(st.sheet)) : ''}
+     <p class="small muted">Ho riconosciuto le colonne dalla riga ${st.hdr + 1}. Controlla gli abbinamenti:</p>
+     <div class="cols"><div>${colSel('Nota / descrizione', 'nota', st.m.nota, true)}</div><div>${colSel('Data', 'data', st.m.data, true)}</div></div>
+     ${sel('Come distinguo spese ed entrate?', 'modo', [['due', 'Due colonne: una per le spese, una per le entrate'], ['tipo', 'Una colonna "tipo" (spesa / entrata)'], ['segno', 'Importi negativi = spese, positivi = entrate'], ['spese', 'Sono tutte spese'], ['entrate', 'Sono tutte entrate']], st.m.modo)}
+     ${st.m.modo === 'due' ? `<div class="cols"><div>${colSel('Colonna spese', 'colS', st.m.colS)}</div><div>${colSel('Colonna entrate', 'colE', st.m.colE)}</div></div>`
+      : `<div class="cols"><div>${colSel('Importo (euro)', 'euro', st.m.euro)}</div>${st.m.modo === 'tipo' ? `<div>${colSel('Colonna tipo', 'tipo', st.m.tipo)}</div>` : ''}</div>`}
+     ${colSel('Categoria (facoltativa)', 'cat', st.m.cat, true)}
+     <div class="panel" style="margin-top:12px"><b>Anteprima:</b> ${S.length} spese (${eur(tot(S))}) · ${E.length} entrate (${eur(tot(E))})${skipped.length ? `<div class="small muted">Righe saltate (vuote, totali o senza importo): ${skipped.slice(0, 15).join(', ')}${skipped.length > 15 ? '…' : ''}</div>` : ''}
+      <table class="t small" style="margin-top:6px">${out.slice(0, 40).map(x => `<tr><td><span class="chip ${x.t === 'spese' ? 'bad' : 'ok'}">${x.t === 'spese' ? 'spesa' : 'entrata'}</span></td><td>${esc(x.nota)}${x.cat ? ` <span class="chip">${esc(x.cat)}</span>` : ''}</td><td>${fmtD(x.data)}</td><td class="n">${eur(x.euro)}</td></tr>`).join('')}</table>
+      ${out.length > 40 ? `<div class="small muted">… e altre ${out.length - 40} voci</div>` : ''}</div>
+     ${(ev.bilancio.spese.length || ev.bilancio.entrate.length) ? `<label style="display:flex;gap:8px;margin-top:10px"><input type="checkbox" name="replace" ${st.replace ? 'checked' : ''}> Sostituisci le voci importate in precedenza da Excel</label>` : ''}`;
+  };
+  const form = modal('Carica bilancio da Excel – ' + file.name, `<div id="xl-body">${body()}</div>`, async () => {
+    const { out } = xlParse(sheets[st.sheet].rows, st.hdr, st.m, ev);
+    if (!out.length) { toast('Nessuna voce da importare: controlla gli abbinamenti delle colonne'); return false; }
+    const b = ev.bilancio;
+    if (st.replace) { b.spese = b.spese.filter(x => !x.imp); b.entrate = b.entrate.filter(x => !x.imp); }
+    out.forEach(x => b[x.t].push({ id: uid(), nota: x.nota, euro: x.euro, data: x.data, cat: x.cat, imp: file.name }));
+    if (await save('events')) toast(`${out.length} voci importate. Puoi correggerle con il tasto ✎`);
+    render();
+  }, { ok: 'Importa', noFocus: true });
+  form.addEventListener('change', e => {
+    const n = e.target.name; if (!n) return;
+    if (n === 'sheet') { st.sheet = +e.target.value; setup(); }
+    else if (n === 'replace') { st.replace = e.target.checked; return; }
+    else if (n === 'modo') st.m.modo = e.target.value;
+    else st.m[n] = +e.target.value;
+    $('#xl-body', form).innerHTML = body();
+  });
+};
 CH.bilNote = async (d, el) => { const ev = evById(d.id); ev.bilancio[d.f] = el.value; await save('events'); };
 A.evChiudi = async d => { const ev = evById(d.id); ev.chiuso = !ev.chiuso; ev.chiusoIl = ev.chiuso ? today() : ''; await save('events'); render(); };
 
@@ -527,15 +658,13 @@ function viewBilancioAnnuale(y) {
   const speseEv = evs.reduce((a, e) => a + sum(e.bilancio.spese), 0), entrEv = evs.reduce((a, e) => a + sum(e.bilancio.entrate), 0);
   const totS = speseEv + sum(Y.spese), totE = entrEv + aff + sum(Y.entrate);
   const evRows = (k) => evs.map(e => `<tr><td><a href="#/bilancio-evento/${e.id}">${esc(e.nome)}</a></td><td class="n">${eur(sum(e.bilancio[k]))}</td><td></td></tr>`).join('');
-  const extra = (k) => Y[k].map(x => `<tr><td>${esc(x.nota)}${x.cat ? ` <span class="chip">${esc(x.cat)}</span>` : ''}<div class="small muted">${fmtD(x.data)}</div></td><td class="n">${eur(x.euro)}</td><td class="n edit"><button class="btn sm sec" data-a="yDel" data-y="${y}" data-t="${k}" data-e="${x.id}">✕</button></td></tr>`).join('');
+  const extra = (k) => Y[k].map(x => `<tr><td>${esc(x.nota)}${x.cat ? ` <span class="chip">${esc(x.cat)}</span>` : ''}<div class="small muted">${fmtD(x.data)}</div></td><td class="n">${eur(x.euro)}</td><td class="n edit" style="white-space:nowrap"><button class="btn sm sec" data-a="entEdit" data-src="year" data-y="${y}" data-t="${k}" data-e="${x.id}">✎</button> <button class="btn sm sec" data-a="entDel" data-src="year" data-y="${y}" data-t="${k}" data-e="${x.id}">✕</button></td></tr>`).join('');
   return `<div class="tabs">${yearsAvailable().map(x => `<button class="${x === y ? 'on' : ''}" data-a="go" data-h="#/bilancio-annuale/${x}">${x}</button>`).join('')}</div>
   <div class="cols">
-   <div class="panel"><h3>SPESE ${y}</h3><table class="t">${evRows('spese')}${extra('spese')}<tr class="tot"><td>TOTALE</td><td class="n">${eur(totS)}</td><td></td></tr></table><button class="btn sm edit" style="margin-top:8px" data-a="yAdd" data-y="${y}" data-t="spese">+ AGGIUNGI</button></div>
-   <div class="panel"><h3>ENTRATE ${y}</h3><table class="t">${evRows('entrate')}<tr><td>Affitti salone a terzi <span class="small muted">(${affitti.length} giorni dal calendario)</span></td><td class="n">${eur(aff)}</td><td></td></tr>${extra('entrate')}<tr class="tot"><td>TOTALE</td><td class="n">${eur(totE)}</td><td></td></tr></table><button class="btn sm edit" style="margin-top:8px" data-a="yAdd" data-y="${y}" data-t="entrate">+ AGGIUNGI</button></div>
+   <div class="panel"><h3>SPESE ${y}</h3><table class="t">${evRows('spese')}${extra('spese')}<tr class="tot"><td>TOTALE</td><td class="n">${eur(totS)}</td><td></td></tr></table><button class="btn sm edit" style="margin-top:8px" data-a="entAdd" data-src="year" data-y="${y}" data-t="spese">+ AGGIUNGI</button></div>
+   <div class="panel"><h3>ENTRATE ${y}</h3><table class="t">${evRows('entrate')}<tr><td>Affitti salone a terzi <span class="small muted">(${affitti.length} giorni dal calendario)</span></td><td class="n">${eur(aff)}</td><td></td></tr>${extra('entrate')}<tr class="tot"><td>TOTALE</td><td class="n">${eur(totE)}</td><td></td></tr></table><button class="btn sm edit" style="margin-top:8px" data-a="entAdd" data-src="year" data-y="${y}" data-t="entrate">+ AGGIUNGI</button></div>
   </div>${resultBox(totE, totS)}<p class="small muted">Gli anni precedenti restano consultabili dalle linguette in alto.</p>`;
 }
-A.yAdd = d => entryModal(d.t, async e => { DB.bilancio.years[d.y] = DB.bilancio.years[d.y] || { spese: [], entrate: [] }; DB.bilancio.years[d.y][d.t].push(e); await save('bilancio'); });
-A.yDel = d => confirmBox('Eliminare la voce?', async () => { const Y = DB.bilancio.years[d.y]; Y[d.t] = Y[d.t].filter(x => x.id !== d.e); await save('bilancio'); render(); }, 'Elimina');
 
 function viewScadenze() {
   const t = today(), ss = [...DB.scadenze].sort((a, b) => a.data.localeCompare(b.data));

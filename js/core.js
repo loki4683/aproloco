@@ -1,7 +1,7 @@
 'use strict';
 /* ===== APROLOCO — utilità, archivio dati, interfaccia di base ===== */
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const DEFAULT_SERVER = 'https://proloco.loki4683.workers.dev';
 
 const $ = (s, r = document) => r.querySelector(s);
