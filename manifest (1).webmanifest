@@ -1,0 +1,30 @@
+{
+  "id": "/aproloco/app-v2",
+  "name": "APROLOCO",
+  "short_name": "APROLOCO",
+  "description": "Gestione eventi, calendario, ricettario e bilancio della Pro Loco",
+  "start_url": "/aproloco/#/home",
+  "scope": "/aproloco/",
+  "display": "standalone",
+  "background_color": "#f6f1e7",
+  "theme_color": "#9c2b23",
+  "lang": "it",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
