@@ -68,6 +68,7 @@ function viewImpostazioni() {
    <button class="btn sec" data-a="logout">${isLocal() ? 'Collega il server / cambia accesso' : 'Esci / cambia PIN'}</button></div>
    <div class="panel"><h3>Installazione</h3><p class="small">Su PC (Chrome o Edge): icona "Installa" nella barra dell'indirizzo. Su Android: menu ⋮ → "Installa app" o "Aggiungi a schermata Home".</p>
    ${UI.installEvt ? '<button class="btn" data-a="install">INSTALLA L\'APP</button>' : ''}</div>
+   <div class="panel"><h3>Google Calendar</h3>${GCAL.panel()}<p class="small muted" style="margin-bottom:0">Ogni membro del direttivo può collegare il proprio Google Calendar: ci finiscono gli eventi Proloco, le prenotazioni del salone, le scadenze delle checklist, le scadenze fiscali e le certificazioni, con promemoria.</p></div>
    <div class="panel"><h3>Backup</h3><p class="small muted">Scarica tutti i dati (senza i file PDF) in un file JSON.</p><button class="btn sec" data-a="backup">Scarica backup</button>
    ${canEdit() ? '<button class="btn sec" data-a="restore">Ripristina da backup</button>' : ''}</div>
    <p class="small muted">APROLOCO v${APP_VERSION}</p>`;
@@ -770,6 +771,30 @@ document.addEventListener('visibilitychange', async () => {
   if (Date.now() - (UI.lastLoad || 0) < 30000) return;
   UI.lastLoad = Date.now(); await loadAll(); render();
 });
+
+/* ---------- Google Calendar ---------- */
+function gcalEvents() {
+  if (!CFG.mode || !Array.isArray(DB.events) || !Array.isArray(DB.bookings)) throw new Error('dati non ancora caricati');
+  const from = addDays(today(), -60), out = [];
+  for (const ev of DB.events) {
+    if (!ev.inizio || (ev.fine || ev.inizio) < from) continue;
+    const ore = ev.oraInizio ? 'Dalle ' + ev.oraInizio + (ev.oraFine ? ' alle ' + ev.oraFine : '') : '';
+    out.push({ key: 'ev|' + ev.id, title: '🎉 ' + ev.nome, date: ev.inizio, end: ev.fine || ev.inizio, remindDays: 7, color: 11, desc: ore });
+  }
+  const TB = { proloco: ['🔴 ', 'Impegno Proloco', 11], terzi: ['🟡 Salone: ', 'Affitto a terzi', 5], comune: ['⚫ Salone: ', 'Comune', 8] };
+  for (const b of DB.bookings) {
+    if (!b.d || b.d < from || !TB[b.tipo]) continue;
+    const t = TB[b.tipo];
+    out.push({ key: 'bk|' + b.id, title: t[0] + (b.nome || b.nota || t[1]), date: b.d, color: t[2], desc: t[1] + (b.nota ? '\n' + b.nota : '') });
+  }
+  for (const d of allDeadlines()) {
+    if (d.date < from) continue;
+    out.push({ key: 'dl|' + d.type + '|' + d.link + '|' + d.label + '|' + d.sub, title: (d.type === 'cert' ? '🎓 ' : '⏰ ') + d.label, date: d.date,
+      remindDays: d.alert, color: d.type === 'cert' ? 6 : 4, desc: d.sub });
+  }
+  return out;
+}
+GCAL.init({ app: 'aproloco', label: 'APROLOCO', calName: 'Pro Loco', events: gcalEvents, toast, btn: 'btn', btn2: 'btn sec', chipBottom: 16 });
 
 (async function start() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });

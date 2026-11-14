@@ -1,7 +1,7 @@
 'use strict';
 /* ===== APROLOCO — utilità, archivio dati, interfaccia di base ===== */
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const DEFAULT_SERVER = 'https://proloco.loki4683.workers.dev';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -72,6 +72,7 @@ async function loadAll() {
   const keys = Object.keys(DEFAULTS);
   if (isLocal()) {
     for (const k of keys) DB[k] = (await idbGet('data', k)) ?? clone(DEFAULTS[k]);
+    GCAL.changed();
     return;
   }
   const results = await Promise.allSettled(keys.map(k => api('/api/data/' + k).then(r => r.json())));
@@ -83,6 +84,7 @@ async function loadAll() {
   }
   for (const k of keys) for (const dk of Object.keys(DEFAULTS[k] || {})) if (!Array.isArray(DEFAULTS[k]) && DB[k] && DB[k][dk] === undefined) DB[k][dk] = clone(DEFAULTS[k][dk]);
   if (failed) toast('Server non raggiungibile: mostro gli ultimi dati salvati su questo dispositivo');
+  GCAL.changed();
 }
 
 async function save(...keys) {
@@ -94,6 +96,7 @@ async function save(...keys) {
       idbPut('data', 'cache:' + k, DB[k]).catch(() => { });
     } catch (e) { toast('Salvataggio non riuscito: ' + e.message); return false; }
   }
+  GCAL.changed();
   return true;
 }
 
