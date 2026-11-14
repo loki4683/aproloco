@@ -6,7 +6,7 @@
      L'app non vede né tocca gli altri tuoi calendari.
    - Nessun server: il telefono parla direttamente con Google.
    ===================================================================== */
-const GCAL_CLIENT_ID = ''; // <-- ID client OAuth di Google Cloud (xxxx.apps.googleusercontent.com)
+const GCAL_CLIENT_ID = '113038202974-qopmk47be9q0coktmo7edqaujgphciif.apps.googleusercontent.com'; // <-- ID client OAuth di Google Cloud (xxxx.apps.googleusercontent.com)
 
 const GCAL = (() => {
   const SCOPE = 'https://www.googleapis.com/auth/calendar.app.created';
